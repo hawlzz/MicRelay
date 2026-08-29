@@ -292,10 +292,19 @@ class MicRelayGuiReceiver(tk.Tk):
 
         self.after(0, lambda: self.lbl_status.config(text=f"Status: Streaming Live (UDP Port {port})", fg="#4ADE80"))
 
+        target_channels = 1
+        try:
+            if device_id is not None:
+                dev_info = sd.query_devices(device_id)
+                if dev_info.get('max_output_channels', 1) >= 2:
+                    target_channels = 2
+        except Exception:
+            pass
+
         try:
             stream = sd.OutputStream(
                 samplerate=44100,
-                channels=1,
+                channels=target_channels,
                 dtype='int16',
                 device=device_id
             )
@@ -312,7 +321,6 @@ class MicRelayGuiReceiver(tk.Tk):
                     continue
 
                 audio_pcm = data[4:]
-                # Ensure even byte count for 16-bit PCM (2 bytes per sample)
                 pcm_len = len(audio_pcm)
                 if pcm_len < 2:
                     continue
@@ -321,17 +329,19 @@ class MicRelayGuiReceiver(tk.Tk):
 
                 audio_array = np.frombuffer(audio_pcm, dtype=np.int16)
 
-                # Calculate RMS Amplitude for VU meter
                 if len(audio_array) > 0:
                     norm_float = audio_array.astype(np.float32) / 32768.0
                     rms = np.sqrt(np.mean(norm_float**2))
                     self.latest_amplitude = min(float(rms * 3.5), 1.0)
 
-                    # Apply Volume Adjustment
                     if self.current_volume != 1.0:
                         audio_array = (audio_array * self.current_volume).clip(-32768, 32767).astype(np.int16)
 
-                stream.write(audio_array)
+                if target_channels == 2:
+                    stereo_array = np.column_stack((audio_array, audio_array))
+                    stream.write(stereo_array)
+                else:
+                    stream.write(audio_array)
 
             except socket.timeout:
                 continue
@@ -362,10 +372,19 @@ class MicRelayGuiReceiver(tk.Tk):
 
         self.after(0, lambda: self.lbl_status.config(text=f"Status: Streaming Live (HTTP Port {port})", fg="#4ADE80"))
 
+        target_channels = 1
+        try:
+            if device_id is not None:
+                dev_info = sd.query_devices(device_id)
+                if dev_info.get('max_output_channels', 1) >= 2:
+                    target_channels = 2
+        except Exception:
+            pass
+
         try:
             stream = sd.OutputStream(
                 samplerate=44100,
-                channels=1,
+                channels=target_channels,
                 dtype='int16',
                 device=device_id
             )
@@ -396,7 +415,11 @@ class MicRelayGuiReceiver(tk.Tk):
                     if self.current_volume != 1.0:
                         audio_array = (audio_array * self.current_volume).clip(-32768, 32767).astype(np.int16)
 
-                stream.write(audio_array)
+                if target_channels == 2:
+                    stereo_array = np.column_stack((audio_array, audio_array))
+                    stream.write(stereo_array)
+                else:
+                    stream.write(audio_array)
 
         except Exception as e:
             print("HTTP Stream error:", e)
