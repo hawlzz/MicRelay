@@ -6,6 +6,8 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import java.net.Inet4Address
 import java.net.NetworkInterface
+import java.net.ServerSocket
+import kotlin.random.Random
 
 object NetworkUtils {
 
@@ -34,6 +36,35 @@ object NetworkUtils {
             e.printStackTrace()
         }
         return null
+    }
+
+    /**
+     * Generates a random 4-digit Security PIN (e.g. "4829").
+     */
+    fun generateSecurityPin(): String {
+        val pinInt = Random.nextInt(1000, 9999)
+        return pinInt.toString()
+    }
+
+    /**
+     * Finds an available open port within a specified range.
+     */
+    fun findRandomFreePort(minPort: Int, maxPort: Int): Int {
+        for (i in 0..50) {
+            val candidatePort = Random.nextInt(minPort, maxPort)
+            if (isPortAvailable(candidatePort)) {
+                return candidatePort
+            }
+        }
+        return minPort // Fallback
+    }
+
+    private fun isPortAvailable(port: Int): Boolean {
+        return try {
+            ServerSocket(port).use { true }
+        } catch (e: Exception) {
+            false
+        }
     }
 
     /**

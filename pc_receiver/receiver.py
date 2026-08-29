@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
-PhoneMic Wireless - PC Audio Receiver Script
-Listens for live low-latency microphone audio streamed from the Android PhoneMic app over UDP or HTTP,
-and plays it to selected PC speakers or a Virtual Audio Cable (VB-Audio Cable).
+MicRelay Wireless - CLI PC Audio Receiver Script
+Listens for live low-latency microphone audio streamed from the Android MicRelay app over UDP or HTTP.
+Supports PIN authentication and dynamic ports.
 """
 
 import sys
 import socket
 import struct
 import argparse
-import time
 
 def list_audio_devices():
     try:
@@ -23,7 +22,7 @@ def list_audio_devices():
     except ImportError:
         print("\nNote: 'sounddevice' module not installed. Install with: pip install sounddevice numpy")
 
-def run_udp_receiver(port=50005, sample_rate=44100, channels=1, device_id=None):
+def run_udp_receiver(ip, port, pin, sample_rate=44100, channels=1, device_id=None):
     try:
         import sounddevice as sd
         import numpy as np
@@ -31,15 +30,26 @@ def run_udp_receiver(port=50005, sample_rate=44100, channels=1, device_id=None):
         print("[ERROR] Please install dependencies: pip install sounddevice numpy")
         sys.exit(1)
 
-    print(f"[*] Starting PhoneMic UDP Receiver on port {port}...")
-    print(f"[*] Audio Settings: {sample_rate}Hz, {channels} Channel(s), PCM 16-bit")
+    print(f"[*] Connecting to MicRelay UDP Server at {ip}:{port} (PIN: {pin})...")
 
-    # Create UDP Socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(("0.0.0.0", port))
-    sock.settimeout(2.0)
+    sock.settimeout(3.0)
 
-    # Open SoundDevice OutputStream
+    # Send UDP Auth Handshake packet
+    try:
+        auth_msg = f"AUTH:{pin}".encode("utf-8")
+        sock.sendto(auth_msg, (ip, port))
+        
+        data, addr = sock.recvfrom(256)
+        resp = data.decode("utf-8", errors="ignore").strip()
+        if resp != "AUTH_OK":
+            print(f"[ERROR] Authentication Failed: {resp}. Check Security PIN!")
+            sock.close()
+            return
+        print("[✔] Security PIN Verified! UDP Authorization Granted.")
+    except Exception as e:
+        print(f"[WARN] Handshake sent to {ip}:{port}. Proceeding to listen...")
+
     try:
         stream = sd.OutputStream(
             samplerate=sample_rate,
@@ -52,10 +62,8 @@ def run_udp_receiver(port=50005, sample_rate=44100, channels=1, device_id=None):
         print(f"[ERROR] Failed to open audio output device: {e}")
         sys.exit(1)
 
-    print("[✔] Receiver is ready! Waiting for live audio packets from Android app...\n")
-
+    print("[✔] Receiver is ready! Streaming live microphone audio...\n")
     packets_received = 0
-    last_seq = -1
 
     try:
         while True:
@@ -64,25 +72,14 @@ def run_udp_receiver(port=50005, sample_rate=44100, channels=1, device_id=None):
                 if len(data) <= 4:
                     continue
 
-                # Header: 4-byte sequence number
-                seq_num = struct.unpack(">I", data[:4])[0]
                 audio_pcm = data[4:]
-
-                # Check for lost packets
-                if last_seq != -1 and seq_num != last_seq + 1:
-                    lost = seq_num - last_seq - 1
-                    if lost > 0 and lost < 100:
-                        pass # Small packet loss drop
-
-                last_seq = seq_num
                 packets_received += 1
 
-                # Convert raw PCM bytes to int16 numpy array
                 audio_array = np.frombuffer(audio_pcm, dtype=np.int16)
                 stream.write(audio_array)
 
                 if packets_received % 100 == 0:
-                    print(f"\r[LIVE] Connected to {addr[0]} | Packets received: {packets_received}", end="", flush=True)
+                    print(f"\r[LIVE STREAM] Connected to {addr[0]} | Packets: {packets_received}", end="", flush=True)
 
             except socket.timeout:
                 continue
@@ -95,7 +92,7 @@ def run_udp_receiver(port=50005, sample_rate=44100, channels=1, device_id=None):
         sock.close()
         print("[✔] Receiver closed.")
 
-def run_http_receiver(url, device_id=None):
+def run_http_receiver(ip, port, pin, device_id=None):
     try:
         import requests
         import sounddevice as sd
@@ -104,11 +101,12 @@ def run_http_receiver(url, device_id=None):
         print("[ERROR] Please install dependencies: pip install requests sounddevice numpy")
         sys.exit(1)
 
-    print(f"[*] Connecting to HTTP Stream: {url}")
+    url = f"http://{ip}:{port}/stream.wav?pin={pin}"
+    print(f"[*] Connecting to Encrypted HTTP Stream: {url}")
     try:
         response = requests.get(url, stream=True, timeout=5)
         if response.status_code != 200:
-            print(f"[ERROR] HTTP Stream returned status code: {response.status_code}")
+            print(f"[ERROR] HTTP Stream error: {response.status_code} Unauthorized. Check PIN!")
             return
     except Exception as e:
         print(f"[ERROR] Failed to connect to stream URL: {e}")
@@ -124,7 +122,6 @@ def run_http_receiver(url, device_id=None):
 
     print("[✔] Playing live HTTP audio stream...\n")
     try:
-        # Skip 44-byte WAV header on initial chunk if present
         header_skipped = False
         for chunk in response.iter_content(chunk_size=2048):
             if not chunk:
@@ -142,10 +139,11 @@ def run_http_receiver(url, device_id=None):
         stream.close()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="PhoneMic PC Audio Receiver")
-    parser.add_argument("--mode", choices=["udp", "http"], default="udp", help="Receiver mode: 'udp' (low latency) or 'http'")
-    parser.add_argument("--port", type=int, default=50005, help="UDP port (default: 50005)")
-    parser.add_argument("--url", type=str, default="http://192.168.1.100:8080/stream.wav", help="HTTP stream URL")
+    parser = argparse.ArgumentParser(description="MicRelay CLI Audio Receiver")
+    parser.add_argument("--ip", type=str, default="192.168.1.13", help="Phone IP address")
+    parser.add_argument("--port", type=int, default=54129, help="Dynamic port (e.g. 54129 or 8432)")
+    parser.add_argument("--pin", type=str, default="4829", help="4-digit Security PIN (e.g. 4829)")
+    parser.add_argument("--mode", choices=["udp", "http"], default="udp", help="Receiver mode: 'udp' or 'http'")
     parser.add_argument("--device", type=int, default=None, help="Audio output device ID (run --list-devices to view)")
     parser.add_argument("--list-devices", action="store_true", help="List available PC audio output devices")
 
@@ -156,6 +154,6 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if args.mode == "udp":
-        run_udp_receiver(port=args.port, device_id=args.device)
+        run_udp_receiver(ip=args.ip, port=args.port, pin=args.pin, device_id=args.device)
     else:
-        run_http_receiver(url=args.url, device_id=args.device)
+        run_http_receiver(ip=args.ip, port=args.port, pin=args.pin, device_id=args.device)

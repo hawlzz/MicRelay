@@ -1,6 +1,5 @@
 package com.example.phonemic.ui.screens
 
-import android.graphics.Bitmap
 import android.net.wifi.p2p.WifiP2pDevice
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -18,7 +17,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -39,6 +37,10 @@ fun MainScreen(
     amplitude: Float,
     waveform: FloatArray,
     localIpAddress: String?,
+    httpPort: Int,
+    udpPort: Int,
+    securityPin: String,
+    onRegenerateCredentials: () -> Unit,
     gain: Float,
     onGainChanged: (Float) -> Unit,
     isMuted: Boolean,
@@ -58,7 +60,7 @@ fun MainScreen(
     var selectedTab by remember { mutableStateOf(ConnectionTab.WIFI_LAN) }
     var showQrDialog by remember { mutableStateOf(false) }
 
-    val webUrl = localIpAddress?.let { "http://$it:8080" } ?: "Not Connected to Wi-Fi"
+    val authenticatedWebUrl = localIpAddress?.let { "http://$it:$httpPort/?pin=$securityPin" } ?: "Not Connected to Wi-Fi"
 
     Scaffold(
         topBar = {
@@ -72,9 +74,18 @@ fun MainScreen(
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "PhoneMic Wireless",
+                            text = "MicRelay Wireless",
                             fontWeight = FontWeight.Bold,
                             color = Color.White
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onRegenerateCredentials) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Regenerate Ports & PIN",
+                            tint = Color(0xFF38BDF8)
                         )
                     }
                 },
@@ -122,6 +133,49 @@ fun MainScreen(
                 }
             }
 
+            // Security PIN Card
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "SECURITY PIN",
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                text = securityPin,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF38BDF8),
+                                fontSize = 26.sp,
+                                letterSpacing = 4.sp
+                            )
+                        }
+
+                        Button(
+                            onClick = onRegenerateCredentials,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F172A)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.LockReset, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("New PIN", fontSize = 12.sp, color = Color.White)
+                        }
+                    }
+                }
+            }
+
             // Central Mic Toggle Button
             item {
                 Card(
@@ -155,14 +209,14 @@ fun MainScreen(
                         Spacer(modifier = Modifier.height(12.dp))
 
                         Text(
-                            text = if (isRecording) "MICROPHONE LIVE" else "MICROPHONE OFF",
+                            text = if (isRecording) "MICROPHONE TRANSMITTING" else "MICROPHONE OFF",
                             fontWeight = FontWeight.Bold,
                             color = if (isRecording) Color(0xFF4ADE80) else Color(0xFF94A3B8),
                             fontSize = 14.sp
                         )
 
                         Text(
-                            text = if (isRecording) "Streaming audio over selected connection" else "Tap button above to start broadcasting",
+                            text = if (isRecording) "Broadcasting one-way audio to authorized receiver" else "Tap button to start broadcasting mic input",
                             color = Color(0xFF64748B),
                             fontSize = 12.sp
                         )
@@ -183,8 +237,11 @@ fun MainScreen(
                 when (selectedTab) {
                     ConnectionTab.WIFI_LAN -> {
                         WifiLanCard(
-                            webUrl = webUrl,
+                            webUrl = authenticatedWebUrl,
                             localIp = localIpAddress,
+                            httpPort = httpPort,
+                            udpPort = udpPort,
+                            pin = securityPin,
                             onShowQrCode = { showQrDialog = true }
                         )
                     }
@@ -244,7 +301,7 @@ fun MainScreen(
                             )
                         }
 
-                        Divider(color = Color(0xFF334155))
+                        HorizontalDivider(color = Color(0xFF334155))
 
                         // Mute Switch
                         Row(
@@ -271,7 +328,7 @@ fun MainScreen(
                             )
                         }
 
-                        Divider(color = Color(0xFF334155))
+                        HorizontalDivider(color = Color(0xFF334155))
 
                         // Noise Suppression Switch
                         Row(
@@ -305,7 +362,7 @@ fun MainScreen(
 
     // QR Code Dialog Popup
     if (showQrDialog && localIpAddress != null) {
-        val qrBitmap = remember(webUrl) { NetworkUtils.generateQrCode(webUrl) }
+        val qrBitmap = remember(authenticatedWebUrl) { NetworkUtils.generateQrCode(authenticatedWebUrl) }
         Dialog(onDismissRequest = { showQrDialog = false }) {
             Card(
                 shape = RoundedCornerShape(24.dp),
@@ -317,10 +374,15 @@ fun MainScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "Scan QR to Open Live Stream",
+                        text = "Scan QR Code to Connect Live",
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         fontSize = 16.sp
+                    )
+                    Text(
+                        text = "Embeds Random Port & Security PIN",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 12.sp
                     )
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -336,9 +398,9 @@ fun MainScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = webUrl,
+                        text = authenticatedWebUrl,
                         color = Color(0xFF38BDF8),
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(16.dp))
@@ -358,6 +420,9 @@ fun MainScreen(
 fun WifiLanCard(
     webUrl: String,
     localIp: String?,
+    httpPort: Int,
+    udpPort: Int,
+    pin: String,
     onShowQrCode: () -> Unit
 ) {
     Card(
@@ -372,11 +437,11 @@ fun WifiLanCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Wifi, contentDescription = null, tint = Color(0xFF38BDF8))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("SAME WI-FI STREAMING", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                Text("PROTECTED WI-FI STREAMING", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
             }
 
             Text(
-                text = "Open this Web URL in any PC, Mac, or Smartphone browser to play live audio:",
+                text = "Enter these dynamic details into your PC Receiver App or Web Browser:",
                 color = Color(0xFF94A3B8),
                 fontSize = 12.sp
             )
@@ -385,32 +450,35 @@ fun WifiLanCard(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = webUrl,
-                        color = Color(0xFF38BDF8),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                    if (localIp != null) {
-                        IconButton(onClick = onShowQrCode) {
-                            Icon(Icons.Default.QrCode, contentDescription = "Show QR Code", tint = Color.White)
-                        }
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Device IP:", color = Color(0xFF94A3B8), fontSize = 13.sp)
+                        Text(localIp ?: "Offline", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Random HTTP Port:", color = Color(0xFF94A3B8), fontSize = 13.sp)
+                        Text("$httpPort", color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Random UDP Port:", color = Color(0xFF94A3B8), fontSize = 13.sp)
+                        Text("$udpPort", color = Color(0xFF4ADE80), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Security PIN:", color = Color(0xFF94A3B8), fontSize = 13.sp)
+                        Text(pin, color = Color(0xFFF59E0B), fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
                     }
                 }
             }
 
-            Text(
-                text = "⚡ PC Low Latency UDP Target: IP $localIp | Port 50005",
-                color = Color(0xFF4ADE80),
-                fontSize = 11.sp
-            )
+            Button(
+                onClick = onShowQrCode,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
+            ) {
+                Icon(Icons.Default.QrCode, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Show Instant Connect QR Code")
+            }
         }
     }
 }

@@ -23,8 +23,8 @@ import kotlinx.coroutines.flow.collectLatest
 class MainActivity : ComponentActivity() {
 
     private lateinit var audioRecorderManager: AudioRecorderManager
-    private lateinit var httpAudioServer: HttpAudioServer
-    private lateinit var udpStreamer: UdpStreamer
+    private var httpAudioServer: HttpAudioServer? = null
+    private var udpStreamer: UdpStreamer? = null
     private lateinit var wifiP2pManager: WifiP2pConnectionManager
     private lateinit var bluetoothManager: BluetoothMicManager
 
@@ -32,6 +32,10 @@ class MainActivity : ComponentActivity() {
     private var amplitudeState = mutableStateOf(0f)
     private var waveformState = mutableStateOf(FloatArray(30) { 0f })
     private var localIpState = mutableStateOf<String?>(null)
+
+    private var securityPinState = mutableStateOf("4829")
+    private var httpPortState = mutableStateOf(8432)
+    private var udpPortState = mutableStateOf(54129)
 
     private var gainState = mutableStateOf(1.0f)
     private var isMutedState = mutableStateOf(false)
@@ -59,12 +63,10 @@ class MainActivity : ComponentActivity() {
 
         // Initialize Managers
         audioRecorderManager = AudioRecorderManager()
-        httpAudioServer = HttpAudioServer(port = 8080)
-        udpStreamer = UdpStreamer()
         wifiP2pManager = WifiP2pConnectionManager(this)
         bluetoothManager = BluetoothMicManager(this)
 
-        localIpState.value = NetworkUtils.getLocalIpAddress()
+        regenerateCredentialsInternal()
 
         // Set up Wi-Fi Direct callbacks
         wifiP2pManager.onPeersUpdated = { peers ->
@@ -82,8 +84,8 @@ class MainActivity : ComponentActivity() {
 
         // Connect Audio Recorder output stream to all network targets
         audioRecorderManager.addAudioDataListener { buffer, length ->
-            httpAudioServer.onAudioDataReceived(buffer, length)
-            udpStreamer.sendAudioFrame(buffer, length)
+            httpAudioServer?.onAudioDataReceived(buffer, length)
+            udpStreamer?.sendAudioFrame(buffer, length)
             wifiP2pManager.sendAudioFrame(buffer, length)
             bluetoothManager.sendAudioFrame(buffer, length)
         }
@@ -96,6 +98,10 @@ class MainActivity : ComponentActivity() {
             val amplitude by remember { amplitudeState }
             val waveform by remember { waveformState }
             val localIp by remember { localIpState }
+
+            val securityPin by remember { securityPinState }
+            val httpPort by remember { httpPortState }
+            val udpPort by remember { udpPortState }
 
             val gain by remember { gainState }
             val isMuted by remember { isMutedState }
@@ -125,6 +131,10 @@ class MainActivity : ComponentActivity() {
                 amplitude = amplitude,
                 waveform = waveform,
                 localIpAddress = localIp,
+                httpPort = httpPort,
+                udpPort = udpPort,
+                securityPin = securityPin,
+                onRegenerateCredentials = { regenerateCredentials() },
                 gain = gain,
                 onGainChanged = { newGain ->
                     gainState.value = newGain
@@ -156,6 +166,34 @@ class MainActivity : ComponentActivity() {
         checkAndRequestPermissions()
     }
 
+    private fun regenerateCredentialsInternal() {
+        securityPinState.value = NetworkUtils.generateSecurityPin()
+        httpPortState.value = NetworkUtils.findRandomFreePort(8000, 9000)
+        udpPortState.value = NetworkUtils.findRandomFreePort(50000, 60000)
+        localIpState.value = NetworkUtils.getLocalIpAddress()
+    }
+
+    private fun regenerateCredentials() {
+        val wasRecording = isRecordingState.value
+        if (wasRecording) {
+            audioRecorderManager.stopRecording()
+            isRecordingState.value = false
+        }
+
+        httpAudioServer?.stop()
+        udpStreamer?.stopStreaming()
+
+        regenerateCredentialsInternal()
+
+        startAudioAndServers()
+
+        if (wasRecording) {
+            toggleRecording()
+        }
+
+        Toast.makeText(this, "New Security PIN & Dynamic Ports Generated!", Toast.LENGTH_SHORT).show()
+    }
+
     private fun checkAndRequestPermissions() {
         val permissionsToRequest = mutableListOf(Manifest.permission.RECORD_AUDIO)
 
@@ -181,8 +219,13 @@ class MainActivity : ComponentActivity() {
 
     private fun startAudioAndServers() {
         try {
-            if (!httpAudioServer.wasStarted()) {
-                httpAudioServer.start()
+            if (httpAudioServer == null || !httpAudioServer!!.wasStarted()) {
+                httpAudioServer = HttpAudioServer(port = httpPortState.value, securityPin = securityPinState.value)
+                httpAudioServer?.start()
+            }
+            if (udpStreamer == null || !udpStreamer!!.isStreaming) {
+                udpStreamer = UdpStreamer(udpPort = udpPortState.value, securityPin = securityPinState.value)
+                udpStreamer?.startStreaming()
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -192,15 +235,11 @@ class MainActivity : ComponentActivity() {
     private fun toggleRecording() {
         if (isRecordingState.value) {
             audioRecorderManager.stopRecording()
-            udpStreamer.stopStreaming()
             isRecordingState.value = false
         } else {
             val started = audioRecorderManager.startRecording()
             if (started) {
                 localIpState.value = NetworkUtils.getLocalIpAddress()
-                localIpState.value?.let { ip ->
-                    udpStreamer.startStreaming(targetIp = ip, port = 50005)
-                }
                 isRecordingState.value = true
             } else {
                 Toast.makeText(this, "Failed to start microphone recording", Toast.LENGTH_SHORT).show()
@@ -211,8 +250,8 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         audioRecorderManager.stopRecording()
-        httpAudioServer.stop()
-        udpStreamer.stopStreaming()
+        httpAudioServer?.stop()
+        udpStreamer?.stopStreaming()
         wifiP2pManager.stopP2p()
         bluetoothManager.stopBluetooth()
     }
