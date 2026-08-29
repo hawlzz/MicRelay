@@ -293,26 +293,40 @@ class MicRelayGuiReceiver(tk.Tk):
         self.after(0, lambda: self.lbl_status.config(text=f"Status: Streaming Live (UDP Port {port})", fg="#4ADE80"))
 
         target_channels = 1
+        target_sr = 44100
         try:
             if device_id is not None:
                 dev_info = sd.query_devices(device_id)
                 if dev_info.get('max_output_channels', 1) >= 2:
                     target_channels = 2
+                def_sr = int(dev_info.get('default_samplerate', 44100))
+                if def_sr in [44100, 48000, 96000]:
+                    target_sr = def_sr
         except Exception:
             pass
 
         try:
             stream = sd.OutputStream(
-                samplerate=44100,
+                samplerate=target_sr,
                 channels=target_channels,
                 dtype='int16',
                 device=device_id
             )
             stream.start()
         except Exception as e:
-            self.after(0, lambda: self.on_auth_failed(f"Audio device error: {e}"))
-            sock.close()
-            return
+            # Fallback to standard 44100Hz if target_sr is refused by host API
+            try:
+                stream = sd.OutputStream(
+                    samplerate=44100,
+                    channels=target_channels,
+                    dtype='int16',
+                    device=device_id
+                )
+                stream.start()
+            except Exception as ex:
+                self.after(0, lambda: self.on_auth_failed(f"Audio device error: {ex}"))
+                sock.close()
+                return
 
         while not self.stop_event.is_set():
             try:
