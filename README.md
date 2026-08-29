@@ -9,43 +9,44 @@
 
 ---
 
-## 🌟 Key Features
+## 🌟 Recent Updates & Key Features
 
-- **🌐 Zero-Install Web Receiver**: Built-in HTTP audio server (`http://<phone-ip>:8080`). Open the live stream on any web browser (Chrome, Edge, Safari, Firefox) without installing any software on your PC.
-- **⚡ Low-Latency UDP Streaming**: Raw PCM 16-bit 44.1kHz audio output over UDP for minimal audio delay—ideal for Discord, OBS Studio, Zoom, and gaming.
-- **📱 Wi-Fi Direct (P2P)**: Connect directly peer-to-peer without needing a router or internet connection.
-- **📶 Bluetooth Audio**: Supports Bluetooth RFCOMM/SPP sockets and Bluetooth SCO headset audio routing.
-- **🎛️ Real-Time Audio Controls**:
-  - **Gain Multiplier Slider**: Boost microphone input sensitivity up to 300% (+10dB).
-  - **DSP Noise Suppression**: Hardware-accelerated background noise filtering.
-  - **Mute Switch**: Instant mic mute toggle.
-- **📊 Live Audio Visualizer**: Real-time waveform canvas and VU peak level meter.
-- **📲 QR Code Connection**: On-screen QR code matrix generation for instant mobile-to-PC connection scanning.
+- **🔒 Security PIN Authentication**: All streams require a 4-digit **Security PIN** (e.g. `4829`). Unauthenticated HTTP stream attempts receive `HTTP 401 Unauthorized`. UDP stream requires a two-way `AUTH:<PIN>` handshake before client IP authorization.
+- **🎲 Dynamic Random Port Selection**: Automatically binds to a dynamic random HTTP port (`8000`–`9000`) and UDP port (`50000`–`60000`) on server startup. Features an on-demand **"New PIN & Ports"** refresh button.
+- **🖥️ Desktop GUI Receiver Application (`pc_receiver/gui_receiver.py`)**: Modern dark-mode Windows GUI app featuring:
+  - **Audio Device Dropdown**: Select Speakers, Headphones, or **VB-Audio Virtual Cable**.
+  - **Multi-Channel Stereo Routing**: Automatic mono-to-stereo channel duplication for full VB-Audio Cable compatibility.
+  - **Native Sample Rate Matching**: Automatic 44.1kHz / 48kHz device sample rate detection.
+  - **Live VU Audio Level Meter**: Animated volume visualizer bar.
+  - **Output Gain / Volume Slider**: Adjust PC playback volume (0% to 200%).
+- **📲 Dynamic QR Code**: Scanning the on-screen QR Code automatically embeds the randomized URL (`http://<ip>:<port>/?pin=<pin>`) for 0-click connection.
+- **🌐 Zero-Install Web Receiver**: Accessible via any web browser (Chrome, Edge, Safari, Firefox) with an interactive Security PIN prompt.
+- **📱 Wi-Fi Direct (P2P) & Bluetooth**: Support for routerless P2P streaming and Bluetooth SCO headset audio routing.
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ System Architecture
 
 ```mermaid
 flowchart TD
     subgraph Android Phone ["📱 Android Smartphone (MicRelay)"]
-        Mic["Microphone Input"] --> AudioRecord["AudioRecord (44.1kHz PCM)"]
+        Mic["Microphone Input"] --> AudioRecord["AudioRecord Engine (44.1kHz PCM)"]
         AudioRecord --> DSP["Gain Control & DSP Noise Suppressor"]
-        DSP --> Streamer["Audio Streamer Engine"]
+        DSP --> SecEngine["Dynamic Port & Security PIN Engine"]
         
-        Streamer -->|Port 8080| HTTP["HTTP Server (NanoHTTPD)"]
-        Streamer -->|Port 50005| UDP["UDP Socket Sender"]
-        Streamer -->|Port 8888| P2P["Wi-Fi Direct Socket"]
-        Streamer --> BT["Bluetooth SPP / SCO"]
+        SecEngine -->|Random Port 8000-9000 + PIN| HTTP["HTTP Server (NanoHTTPD)"]
+        SecEngine -->|Random Port 50000-60000 + AUTH:PIN| UDP["UDP Socket Server"]
+        SecEngine -->|Port 8888| P2P["Wi-Fi Direct Socket"]
+        SecEngine --> BT["Bluetooth SPP / SCO"]
     end
 
     subgraph Receivers ["💻 Receiver Targets"]
-        HTTP --> Browser["Web Browser (Zero-Install)"]
-        UDP --> PC["PC Receiver Script (receiver.py)"]
-        PC --> VAC["VB-Audio Cable"]
-        VAC --> Discord["Discord / Zoom / OBS"]
+        HTTP -->|?pin=4829| Browser["Web Browser Receiver"]
+        UDP -->|AUTH:4829 Handshake| GUIRec["MicRelay Desktop GUI Receiver (gui_receiver.py)"]
+        GUIRec -->|Mono to Stereo Audio| VAC["CABLE Input (VB-Audio Virtual Cable)"]
+        VAC -->|CABLE Output| Discord["Discord / Zoom / OBS Studio"]
         P2P --> Peer["P2P Companion Device"]
-        BT --> BTSpeaker["Bluetooth Speaker / Receiver"]
+        BT --> BTSpeaker["Bluetooth Speaker"]
     end
 ```
 
@@ -53,8 +54,8 @@ flowchart TD
 
 ## 🚀 Quick Start Guide
 
-### 1. Android App Setup
-1. Clone the repository and build using Android Studio or Gradle:
+### 1. Android App Installation
+1. Clone the repository and build:
    ```bash
    git clone https://github.com/hawlzz/MicRelay.git
    cd MicRelay
@@ -67,52 +68,46 @@ flowchart TD
 
 ---
 
-### 2. Connection Options
+### 2. PC Desktop GUI Receiver Setup (Recommended for Discord / OBS / Zoom)
 
-#### Option A: Web Browser Player (Zero-Install)
-1. Open **MicRelay** on your phone and tap **Start Broadcast**.
-2. Connect your PC to the same Wi-Fi network as your phone.
-3. Open any web browser on your PC and enter the URL shown on your phone screen:
-   ```
-   http://<YOUR-PHONE-IP>:8080
-   ```
-   *(Or tap **Show QR Code** in the app and scan it with your PC/phone camera!)*
-4. Click **Connect & Play Live Stream**.
-
----
-
-#### Option B: Low-Latency PC UDP Receiver (For Discord/Zoom/OBS)
 1. Navigate to the `pc_receiver` directory and install Python dependencies:
    ```bash
    cd pc_receiver
    pip install -r requirements.txt
    ```
-2. View available audio output devices:
+2. Launch the **Desktop GUI Receiver**:
    ```bash
-   python receiver.py --list-devices
+   python gui_receiver.py
    ```
-3. Start receiving live audio over UDP:
-   ```bash
-   python receiver.py --port 50005
-   ```
-4. **Virtual Audio Cable Setup (Optional)**: Install [VB-Audio Cable](https://vb-audio.com/Cable/) and run:
-   ```bash
-   python receiver.py --device <CABLE_INPUT_DEVICE_ID>
-   ```
-   Select **CABLE Output** as your Microphone Input in Discord, Zoom, or OBS.
+3. Enter your phone's **IP Address**, **Dynamic Port**, and **Security PIN** displayed on your phone screen.
+4. Select your **Audio Output Device**:
+   - For direct listening: Select your PC Speakers / Headphones.
+   - For Discord/Zoom/OBS: Select **`CABLE In (VB-Audio Virtual Cable)`**.
+5. Click **CONNECT & START RECEIVER**.
 
 ---
 
-#### Option C: Wi-Fi Direct (P2P - Routerless)
-1. Select the **Wi-Fi P2P** tab in the app.
-2. Tap **Scan Peers** to discover nearby devices outdoor or without a Wi-Fi router.
+### 3. How to Setup MicRelay as Microphone Input in Discord
+
+1. Download & Install [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) (Free for Windows).
+2. In **MicRelay Desktop GUI Receiver**, set **Audio Output Device** to:
+   `CABLE In 16ch (VB-Audio Virtual Cable)`
+3. In **Discord Voice Settings** (`Settings -> Voice & Video`):
+   - Set **Input Device** (Thiết bị đầu vào) to: **`CABLE Output (VB-Audio Virtual Cable)`**.
+   - Under **Noise Suppression** (Chặn tiếng ồn): Change from **Krisp** to **Standard** or **Disabled**.
+   - Enable **Automatically determine input sensitivity** (Tự động điều chỉnh độ nhạy đầu vào).
 
 ---
 
-#### Option D: Bluetooth Audio Routing
-1. Pair your phone with your Bluetooth PC or headset.
-2. Select the **Bluetooth** tab in MicRelay.
-3. Toggle **Bluetooth SCO Headset Routing** to route phone mic audio directly.
+### 4. Zero-Install Web Receiver Option
+
+1. Open **MicRelay** on your phone and tap **Start Broadcast**.
+2. Open any web browser on your PC/laptop connected to the same Wi-Fi:
+   ```
+   http://<YOUR-PHONE-IP>:<RANDOM-PORT>/?pin=<SECURITY-PIN>
+   ```
+   *(Or tap **Show QR Code** in the app and scan it with your phone/PC camera!)*
+3. Click **Connect & Play Live Stream**.
 
 ---
 
@@ -124,13 +119,13 @@ MicRelay/
 │   ├── src/main/
 │   │   ├── AndroidManifest.xml
 │   │   └── java/com/example/phonemic/
-│   │       ├── MainActivity.kt                # Main Activity & Permission handler
+│   │       ├── MainActivity.kt                # Activity, dynamic credentials, permission handler
 │   │       ├── audio/
 │   │       │   ├── AudioRecorderManager.kt     # Low-latency AudioRecord & DSP engine
 │   │       │   └── AudioVisualizerState.kt     # Waveform & amplitude state
 │   │       ├── network/
-│   │       │   ├── HttpAudioServer.kt         # NanoHTTPD web audio streamer & HTML player
-│   │       │   ├── UdpStreamer.kt             # UDP socket streaming engine
+│   │       │   ├── HttpAudioServer.kt         # NanoHTTPD web audio streamer with PIN auth
+│   │       │   ├── UdpStreamer.kt             # UDP socket streaming with AUTH:PIN handshake
 │   │       │   └── WifiP2pConnectionManager.kt# Wi-Fi Direct discovery & socket
 │   │       ├── bluetooth/
 │   │       │   └── BluetoothMicManager.kt     # Bluetooth SPP & SCO routing
@@ -138,14 +133,15 @@ MicRelay/
 │   │       │   ├── components/
 │   │       │   │   └── AudioMeter.kt          # Animated Canvas waveform visualizer
 │   │       │   └── screens/
-│   │       │       └── MainScreen.kt          # Jetpack Compose dashboard
+│   │       │       └── MainScreen.kt          # Jetpack Compose dashboard with PIN Card
 │   │       └── utils/
-│   │           └── NetworkUtils.kt            # IP resolution & ZXing QR code matrix
+│   │           └── NetworkUtils.kt            # Random ports, PIN generator & ZXing QR code
 │   └── build.gradle.kts
 ├── pc_receiver/
-│   ├── receiver.py                            # Python low-latency receiver script
+│   ├── gui_receiver.py                        # Desktop GUI Receiver (Tkinter + SoundDevice)
+│   ├── receiver.py                            # CLI Receiver script with PIN & UDP auth
 │   ├── requirements.txt                       # Python dependencies
-│   └── README.md                              # Detailed PC setup guide
+│   └── README.md                              # PC receiver setup guide
 ├── build.gradle.kts
 ├── settings.gradle.kts
 └── README.md
