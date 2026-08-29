@@ -73,6 +73,12 @@ def run_udp_receiver(ip, port, pin, sample_rate=44100, channels=1, device_id=Non
                     continue
 
                 audio_pcm = data[4:]
+                pcm_len = len(audio_pcm)
+                if pcm_len < 2:
+                    continue
+                if pcm_len % 2 != 0:
+                    audio_pcm = audio_pcm[:pcm_len - 1]
+
                 packets_received += 1
 
                 audio_array = np.frombuffer(audio_pcm, dtype=np.int16)

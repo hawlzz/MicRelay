@@ -275,7 +275,7 @@ class MicRelayGuiReceiver(tk.Tk):
             
             # Wait for handshake response
             data, addr = sock.recvfrom(256)
-            resp = data.decode("utf-8", errors="ignore").trim()
+            resp = data.decode("utf-8", errors="ignore").strip()
             if resp != "AUTH_OK":
                 self.after(0, lambda: self.on_auth_failed("Invalid Security PIN or Handshake Denied"))
                 sock.close()
@@ -312,6 +312,13 @@ class MicRelayGuiReceiver(tk.Tk):
                     continue
 
                 audio_pcm = data[4:]
+                # Ensure even byte count for 16-bit PCM (2 bytes per sample)
+                pcm_len = len(audio_pcm)
+                if pcm_len < 2:
+                    continue
+                if pcm_len % 2 != 0:
+                    audio_pcm = audio_pcm[:pcm_len - 1]
+
                 audio_array = np.frombuffer(audio_pcm, dtype=np.int16)
 
                 # Calculate RMS Amplitude for VU meter
